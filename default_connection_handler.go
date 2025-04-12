@@ -31,10 +31,6 @@ type ServerProtocol[Req Request, Resp Response] interface {
 	MarshalResponse(response Resp) ([]byte, error)
 }
 
-type RequestHandler[Req Request, Resp Response] interface {
-	HandleRequest(ctx context.Context, request Req) (Resp, error)
-}
-
 type DefaultConnectionHandlerOptions[Req Request, Resp Response] struct {
 	ReadTimeout     mo.Option[time.Duration]
 	WriteTimeout    mo.Option[time.Duration]
