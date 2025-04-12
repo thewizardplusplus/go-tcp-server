@@ -12,10 +12,6 @@ const (
 	TCPServerNetwork = "tcp"
 )
 
-type ConnectionHandler interface {
-	HandleConnection(ctx context.Context, connection net.Conn) error
-}
-
 type ErrorHandler func(err error)
 
 type TCPServerOptions struct {
