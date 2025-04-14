@@ -14,6 +14,11 @@ const (
 
 type ErrorHandler func(err error)
 
+// is only used to generate the mock
+type errorHandler interface { //nolint:unused
+	HandleError(err error)
+}
+
 type TCPServerOptions struct {
 	Address           string
 	ConnectionHandler ConnectionHandler
