@@ -1,0 +1,13 @@
+recursive: true
+force-file-write: true
+dir: "mocks/{{ .SrcPackagePath }}"
+filename: "mock_{{ .InterfaceName }}.go"
+pkgname: "{{ .SrcPackageName }}Mocks"
+structname: "Mock{{ .InterfaceName }}"
+template: testify
+formatter: "goimports"
+packages:
+  github.com/thewizardplusplus/go-tcp-server:
+    interfaces:
+      ConnectionHandler:
+      errorHandler:
