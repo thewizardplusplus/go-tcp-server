@@ -10,4 +10,5 @@ packages:
   github.com/thewizardplusplus/go-tcp-server:
     interfaces:
       ConnectionHandler:
+      netConn:
       errorHandler:
