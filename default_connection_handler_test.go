@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -593,6 +594,394 @@ func TestDefaultConnectionHandler_HandleRequest(test *testing.T) {
 				data.args.connection(test),
 				data.args.scanner,
 			)
+
+			data.wantErr(test, err)
+		})
+	}
+}
+
+func TestDefaultConnectionHandler_HandleConnection(test *testing.T) {
+	const acceptableDeadlineError = time.Minute
+
+	type request string
+	type response string
+	type constructorArgs struct {
+		options func(test *testing.T) tcpServer.DefaultConnectionHandlerOptions[
+			request,
+			response,
+		]
+	}
+	type args struct {
+		ctx        context.Context
+		connection func(test *testing.T) net.Conn
+	}
+
+	for _, data := range []struct {
+		name            string
+		constructorArgs constructorArgs
+		args            args
+		wantErr         assert.ErrorAssertionFunc
+	}{
+		{
+			name: "success/scanner has no more tokens",
+			constructorArgs: constructorArgs{
+				options: func(test *testing.T) tcpServer.DefaultConnectionHandlerOptions[
+					request,
+					response,
+				] {
+					serverProtocolMock :=
+						tcpServerExternalMocks.NewMockServerProtocol[request, response](test)
+					serverProtocolMock.EXPECT().
+						InitialScannerBufferSize().
+						Return(4096)
+					serverProtocolMock.EXPECT().
+						MaxTokenSize().
+						Return(bufio.MaxScanTokenSize)
+					serverProtocolMock.EXPECT().
+						ExtractToken([]byte("raw-request"), true).
+						Return(len("raw-request"), []byte("request"), bufio.ErrFinalToken)
+					serverProtocolMock.EXPECT().
+						ParseRequest([]byte("request")).
+						Return("parsed-request", nil)
+					serverProtocolMock.EXPECT().
+						MarshalResponse(response("response")).
+						Return([]byte("marshalled-response"), nil)
+
+					requestHandlerMock :=
+						tcpServerExternalMocks.NewMockRequestHandler[request, response](test)
+					requestHandlerMock.EXPECT().
+						HandleRequest(
+							mock.AnythingOfType("*context.timerCtx"),
+							request("parsed-request"),
+						).
+						Return("response", nil)
+
+					return tcpServer.DefaultConnectionHandlerOptions[request, response]{
+						ReadTimeout:     mo.Some(5 * time.Minute),
+						WriteTimeout:    mo.Some(12 * time.Minute),
+						HandlingTimeout: mo.Some(23 * time.Minute),
+						ServerProtocol:  serverProtocolMock,
+						RequestHandler:  requestHandlerMock,
+					}
+				},
+			},
+			args: args{
+				ctx: context.Background(),
+				connection: func(test *testing.T) net.Conn {
+					netConnMock := tcpServerMocks.NewMocknetConn(test)
+					netConnMock.EXPECT().
+						SetReadDeadline(mock.MatchedBy(func(deadline time.Time) bool {
+							expectedDeadline := time.Now().Add(5 * time.Minute)
+							return expectedDeadline.Sub(deadline).Abs() < acceptableDeadlineError
+						})).
+						Return(nil)
+					netConnMock.EXPECT().
+						SetWriteDeadline(mock.MatchedBy(func(deadline time.Time) bool {
+							expectedDeadline := time.Now().Add(12 * time.Minute)
+							return expectedDeadline.Sub(deadline).Abs() < acceptableDeadlineError
+						})).
+						Return(nil)
+					netConnMock.EXPECT().
+						Read(mock.AnythingOfType("[]uint8")).
+						RunAndReturn(func(buffer []byte) (int, error) {
+							return copy(buffer, "raw-request"), io.EOF
+						})
+					netConnMock.EXPECT().
+						Write([]byte("marshalled-response")).
+						RunAndReturn(func(data []byte) (int, error) {
+							return len(data), nil
+						})
+
+					return netConnMock
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "success/request handler requested to stop handling",
+			constructorArgs: constructorArgs{
+				options: func(test *testing.T) tcpServer.DefaultConnectionHandlerOptions[
+					request,
+					response,
+				] {
+					serverProtocolMock :=
+						tcpServerExternalMocks.NewMockServerProtocol[request, response](test)
+					serverProtocolMock.EXPECT().
+						InitialScannerBufferSize().
+						Return(4096)
+					serverProtocolMock.EXPECT().
+						MaxTokenSize().
+						Return(bufio.MaxScanTokenSize)
+					serverProtocolMock.EXPECT().
+						ExtractToken([]byte("raw-request"), true).
+						Return(len("raw-request"), []byte("request"), bufio.ErrFinalToken)
+					serverProtocolMock.EXPECT().
+						ParseRequest([]byte("request")).
+						Return("parsed-request", nil)
+					serverProtocolMock.EXPECT().
+						MarshalResponse(response("response")).
+						Return([]byte("marshalled-response"), nil)
+
+					requestHandlerMock :=
+						tcpServerExternalMocks.NewMockRequestHandler[request, response](test)
+					requestHandlerMock.EXPECT().
+						HandleRequest(
+							mock.AnythingOfType("*context.timerCtx"),
+							request("parsed-request"),
+						).
+						Return(
+							"response",
+							fmt.Errorf("wrapped error: %w", tcpServer.ErrHandlingStopIsRequired),
+						)
+
+					return tcpServer.DefaultConnectionHandlerOptions[request, response]{
+						ReadTimeout:     mo.Some(5 * time.Minute),
+						WriteTimeout:    mo.Some(12 * time.Minute),
+						HandlingTimeout: mo.Some(23 * time.Minute),
+						ServerProtocol:  serverProtocolMock,
+						RequestHandler:  requestHandlerMock,
+					}
+				},
+			},
+			args: args{
+				ctx: context.Background(),
+				connection: func(test *testing.T) net.Conn {
+					netConnMock := tcpServerMocks.NewMocknetConn(test)
+					netConnMock.EXPECT().
+						SetReadDeadline(mock.MatchedBy(func(deadline time.Time) bool {
+							expectedDeadline := time.Now().Add(5 * time.Minute)
+							return expectedDeadline.Sub(deadline).Abs() < acceptableDeadlineError
+						})).
+						Return(nil)
+					netConnMock.EXPECT().
+						SetWriteDeadline(mock.MatchedBy(func(deadline time.Time) bool {
+							expectedDeadline := time.Now().Add(12 * time.Minute)
+							return expectedDeadline.Sub(deadline).Abs() < acceptableDeadlineError
+						})).
+						Return(nil)
+					netConnMock.EXPECT().
+						Read(mock.AnythingOfType("[]uint8")).
+						RunAndReturn(func(buffer []byte) (int, error) {
+							return copy(buffer, "raw-request"), io.EOF
+						})
+					netConnMock.EXPECT().
+						Write([]byte("marshalled-response")).
+						RunAndReturn(func(data []byte) (int, error) {
+							return len(data), nil
+						})
+
+					return netConnMock
+				},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "error/context is done",
+			constructorArgs: constructorArgs{
+				options: func(test *testing.T) tcpServer.DefaultConnectionHandlerOptions[
+					request,
+					response,
+				] {
+					serverProtocolMock :=
+						tcpServerExternalMocks.NewMockServerProtocol[request, response](test)
+					serverProtocolMock.EXPECT().
+						InitialScannerBufferSize().
+						Return(4096)
+					serverProtocolMock.EXPECT().
+						MaxTokenSize().
+						Return(bufio.MaxScanTokenSize)
+
+					requestHandlerMock :=
+						tcpServerExternalMocks.NewMockRequestHandler[request, response](test)
+					return tcpServer.DefaultConnectionHandlerOptions[request, response]{
+						ReadTimeout:     mo.Some(5 * time.Minute),
+						WriteTimeout:    mo.Some(12 * time.Minute),
+						HandlingTimeout: mo.Some(23 * time.Minute),
+						ServerProtocol:  serverProtocolMock,
+						RequestHandler:  requestHandlerMock,
+					}
+				},
+			},
+			args: args{
+				ctx: func() context.Context {
+					ctx, ctxCancel := context.WithCancel(context.Background())
+					ctxCancel()
+
+					return ctx
+				}(),
+				connection: func(test *testing.T) net.Conn {
+					return tcpServerMocks.NewMocknetConn(test)
+				},
+			},
+			wantErr: assert.Error,
+		},
+		{
+			name: "error/unable to handle the request/regular error",
+			constructorArgs: constructorArgs{
+				options: func(test *testing.T) tcpServer.DefaultConnectionHandlerOptions[
+					request,
+					response,
+				] {
+					serverProtocolMock :=
+						tcpServerExternalMocks.NewMockServerProtocol[request, response](test)
+					serverProtocolMock.EXPECT().
+						InitialScannerBufferSize().
+						Return(4096)
+					serverProtocolMock.EXPECT().
+						MaxTokenSize().
+						Return(bufio.MaxScanTokenSize)
+					serverProtocolMock.EXPECT().
+						ExtractToken([]byte("raw-request"), true).
+						Return(len("raw-request"), []byte("request"), bufio.ErrFinalToken)
+					serverProtocolMock.EXPECT().
+						ParseRequest([]byte("request")).
+						Return("parsed-request", nil)
+
+					requestHandlerMock :=
+						tcpServerExternalMocks.NewMockRequestHandler[request, response](test)
+					requestHandlerMock.EXPECT().
+						HandleRequest(
+							mock.AnythingOfType("*context.timerCtx"),
+							request("parsed-request"),
+						).
+						Return("", iotest.ErrTimeout)
+
+					return tcpServer.DefaultConnectionHandlerOptions[request, response]{
+						ReadTimeout:     mo.Some(5 * time.Minute),
+						WriteTimeout:    mo.Some(12 * time.Minute),
+						HandlingTimeout: mo.Some(23 * time.Minute),
+						ServerProtocol:  serverProtocolMock,
+						RequestHandler:  requestHandlerMock,
+					}
+				},
+			},
+			args: args{
+				ctx: context.Background(),
+				connection: func(test *testing.T) net.Conn {
+					netConnMock := tcpServerMocks.NewMocknetConn(test)
+					netConnMock.EXPECT().
+						SetReadDeadline(mock.MatchedBy(func(deadline time.Time) bool {
+							expectedDeadline := time.Now().Add(5 * time.Minute)
+							return expectedDeadline.Sub(deadline).Abs() < acceptableDeadlineError
+						})).
+						Return(nil)
+					netConnMock.EXPECT().
+						Read(mock.AnythingOfType("[]uint8")).
+						RunAndReturn(func(buffer []byte) (int, error) {
+							return copy(buffer, "raw-request"), io.EOF
+						})
+
+					return netConnMock
+				},
+			},
+			wantErr: assert.Error,
+		},
+		{
+			name: "error/unable to handle the request/`net.Conn.Read()`",
+			constructorArgs: constructorArgs{
+				options: func(test *testing.T) tcpServer.DefaultConnectionHandlerOptions[
+					request,
+					response,
+				] {
+					serverProtocolMock :=
+						tcpServerExternalMocks.NewMockServerProtocol[request, response](test)
+					serverProtocolMock.EXPECT().
+						InitialScannerBufferSize().
+						Return(4096)
+					serverProtocolMock.EXPECT().
+						MaxTokenSize().
+						Return(bufio.MaxScanTokenSize)
+					serverProtocolMock.EXPECT().
+						ExtractToken([]byte{}, true).
+						Return(0, nil, bufio.ErrFinalToken)
+
+					requestHandlerMock :=
+						tcpServerExternalMocks.NewMockRequestHandler[request, response](test)
+					return tcpServer.DefaultConnectionHandlerOptions[request, response]{
+						ReadTimeout:     mo.Some(5 * time.Minute),
+						WriteTimeout:    mo.Some(12 * time.Minute),
+						HandlingTimeout: mo.Some(23 * time.Minute),
+						ServerProtocol:  serverProtocolMock,
+						RequestHandler:  requestHandlerMock,
+					}
+				},
+			},
+			args: args{
+				ctx: context.Background(),
+				connection: func(test *testing.T) net.Conn {
+					netConnMock := tcpServerMocks.NewMocknetConn(test)
+					netConnMock.EXPECT().
+						SetReadDeadline(mock.MatchedBy(func(deadline time.Time) bool {
+							expectedDeadline := time.Now().Add(5 * time.Minute)
+							return expectedDeadline.Sub(deadline).Abs() < acceptableDeadlineError
+						})).
+						Return(nil)
+					netConnMock.EXPECT().
+						Read(mock.AnythingOfType("[]uint8")).
+						Return(0, iotest.ErrTimeout)
+
+					return netConnMock
+				},
+			},
+			wantErr: assert.Error,
+		},
+		{
+			name: "error/unable to handle the request/`Protocol.ExtractToken()`",
+			constructorArgs: constructorArgs{
+				options: func(test *testing.T) tcpServer.DefaultConnectionHandlerOptions[
+					request,
+					response,
+				] {
+					serverProtocolMock :=
+						tcpServerExternalMocks.NewMockServerProtocol[request, response](test)
+					serverProtocolMock.EXPECT().
+						InitialScannerBufferSize().
+						Return(4096)
+					serverProtocolMock.EXPECT().
+						MaxTokenSize().
+						Return(bufio.MaxScanTokenSize)
+					serverProtocolMock.EXPECT().
+						ExtractToken([]byte("raw-request"), true).
+						Return(0, nil, iotest.ErrTimeout)
+
+					requestHandlerMock :=
+						tcpServerExternalMocks.NewMockRequestHandler[request, response](test)
+					return tcpServer.DefaultConnectionHandlerOptions[request, response]{
+						ReadTimeout:     mo.Some(5 * time.Minute),
+						WriteTimeout:    mo.Some(12 * time.Minute),
+						HandlingTimeout: mo.Some(23 * time.Minute),
+						ServerProtocol:  serverProtocolMock,
+						RequestHandler:  requestHandlerMock,
+					}
+				},
+			},
+			args: args{
+				ctx: context.Background(),
+				connection: func(test *testing.T) net.Conn {
+					netConnMock := tcpServerMocks.NewMocknetConn(test)
+					netConnMock.EXPECT().
+						SetReadDeadline(mock.MatchedBy(func(deadline time.Time) bool {
+							expectedDeadline := time.Now().Add(5 * time.Minute)
+							return expectedDeadline.Sub(deadline).Abs() < acceptableDeadlineError
+						})).
+						Return(nil)
+					netConnMock.EXPECT().
+						Read(mock.AnythingOfType("[]uint8")).
+						RunAndReturn(func(buffer []byte) (int, error) {
+							return copy(buffer, "raw-request"), io.EOF
+						})
+
+					return netConnMock
+				},
+			},
+			wantErr: assert.Error,
+		},
+	} {
+		test.Run(data.name, func(test *testing.T) {
+			handler := tcpServer.NewDefaultConnectionHandler(
+				data.constructorArgs.options(test),
+			)
+			err := handler.HandleConnection(data.args.ctx, data.args.connection(test))
 
 			data.wantErr(test, err)
 		})
