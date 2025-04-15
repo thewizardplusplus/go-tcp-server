@@ -10,5 +10,13 @@ packages:
   github.com/thewizardplusplus/go-tcp-server:
     interfaces:
       ConnectionHandler:
+      ServerProtocol:
+        config:
+          dir: "mocks/external/{{ .SrcPackagePath }}"
+          pkgname: "{{ .SrcPackageName }}ExternalMocks"
+      RequestHandler:
+        config:
+          dir: "mocks/external/{{ .SrcPackagePath }}"
+          pkgname: "{{ .SrcPackageName }}ExternalMocks"
       netConn:
       errorHandler:
