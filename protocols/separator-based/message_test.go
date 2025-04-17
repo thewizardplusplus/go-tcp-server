@@ -238,3 +238,109 @@ func TestParseMessage(test *testing.T) {
 		})
 	}
 }
+
+func TestMarshalMessage(test *testing.T) {
+	type args struct {
+		message Message
+		params  SeparationParams
+	}
+
+	for _, data := range []struct {
+		name    string
+		args    args
+		want    []byte
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "success/minimal message",
+			args: args{
+				message: Message{
+					Introduction: []byte("dummy"),
+					Headers:      make(map[string][]byte),
+					Body:         []byte{},
+				},
+				params: SeparationParams{
+					MessageSeparator:        []byte("\n"),
+					MessagePartSeparator:    []byte("|"),
+					HeaderSeparator:         []byte("&"),
+					HeaderKeyValueSeparator: []byte("="),
+				},
+			},
+			want:    []byte("dummy||"),
+			wantErr: assert.NoError,
+		},
+		{
+			name: "success/full message",
+			args: args{
+				message: Message{
+					Introduction: []byte("introduction"),
+					Headers: map[string][]byte{
+						"6f6e65":     []byte("two"),
+						"7468726565": []byte("four"),
+					},
+					Body: []byte("body"),
+				},
+				params: SeparationParams{
+					MessageSeparator:        []byte("\n"),
+					MessagePartSeparator:    []byte("|"),
+					HeaderSeparator:         []byte("&"),
+					HeaderKeyValueSeparator: []byte("="),
+				},
+			},
+			want:    []byte("introduction|one=two&three=four|body"),
+			wantErr: assert.NoError,
+		},
+		{
+			name: "success/with escaped separators",
+			args: args{
+				message: Message{
+					Introduction: []byte("dummy|introduction\n"),
+					Headers: map[string][]byte{
+						"64756d6d793d6f6e650a":     []byte("dummy&two\n"),
+						"64756d6d793d74687265650a": []byte("dummy&four\n"),
+					},
+					Body: []byte("dummy|body\n"),
+				},
+				params: SeparationParams{
+					MessageSeparator:        []byte("\n"),
+					MessagePartSeparator:    []byte("|"),
+					HeaderSeparator:         []byte("&"),
+					HeaderKeyValueSeparator: []byte("="),
+				},
+			},
+			want: []byte(
+				"dummy%7cintroduction%0a|" +
+					"dummy%3done%0a=dummy%26two%0a&dummy%3dthree%0a=dummy%26four%0a|" +
+					"dummy%7cbody%0a",
+			),
+			wantErr: assert.NoError,
+		},
+		{
+			name: "error/unable to decode the header key",
+			args: args{
+				message: Message{
+					Introduction: []byte("introduction"),
+					Headers: map[string][]byte{
+						"invalid": []byte("dummy"),
+					},
+					Body: []byte("body"),
+				},
+				params: SeparationParams{
+					MessageSeparator:        []byte("\n"),
+					MessagePartSeparator:    []byte("|"),
+					HeaderSeparator:         []byte("&"),
+					HeaderKeyValueSeparator: []byte("="),
+				},
+			},
+			want:    nil,
+			wantErr: assert.Error,
+		},
+	} {
+		test.Run(data.name, func(test *testing.T) {
+			got, err := MarshalMessage(data.args.message, data.args.params)
+
+			assert.Equal(test, data.want, got)
+			data.wantErr(test, err)
+		})
+	}
+}

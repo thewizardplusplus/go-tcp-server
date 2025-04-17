@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 )
 
 const (
@@ -106,4 +107,46 @@ func ParseMessage(data []byte, params SeparationParams) (Message, error) {
 		Body:         body,
 	}
 	return message, nil
+}
+
+func MarshalMessage(message Message, params SeparationParams) ([]byte, error) {
+	separators := [][]byte{
+		params.MessageSeparator,
+		params.MessagePartSeparator,
+		params.HeaderSeparator,
+		params.HeaderKeyValueSeparator,
+	}
+
+	marshalledHeaders := make([][]byte, 0, len(message.Headers))
+	for encodedKey, value := range message.Headers {
+		key, err := hex.DecodeString(encodedKey)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unable to decode the header key %q: %w",
+				encodedKey,
+				err,
+			)
+		}
+
+		marshalledHeaders = append(marshalledHeaders, bytes.Join(
+			[][]byte{
+				EscapeSeparators(key, separators),
+				EscapeSeparators(value, separators),
+			},
+			params.HeaderKeyValueSeparator,
+		))
+	}
+	slices.SortStableFunc(marshalledHeaders, func(a []byte, b []byte) int {
+		return bytes.Compare(a, b)
+	})
+
+	marshalledMessage := bytes.Join(
+		[][]byte{
+			EscapeSeparators(message.Introduction, separators),
+			bytes.Join(marshalledHeaders, params.HeaderSeparator),
+			EscapeSeparators(message.Body, separators),
+		},
+		params.MessagePartSeparator,
+	)
+	return marshalledMessage, nil
 }
