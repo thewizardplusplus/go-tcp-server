@@ -12,10 +12,6 @@ import (
 	"github.com/samber/mo"
 )
 
-var (
-	ErrHandlingStopIsRequired = errors.New("handling stop is required")
-)
-
 type Request any
 
 type Response any

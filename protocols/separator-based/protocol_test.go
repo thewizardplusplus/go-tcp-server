@@ -16,6 +16,11 @@ func TestProtocol_interface(test *testing.T) {
 		(*tcpServer.ServerProtocol[Request, Response])(nil),
 		Protocol{},
 	)
+	assert.Implements(
+		test,
+		(*tcpServer.ClientProtocol[Request, Response])(nil),
+		Protocol{},
+	)
 }
 
 func TestNewProtocol(test *testing.T) {
