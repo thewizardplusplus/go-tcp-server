@@ -13,12 +13,8 @@ import (
 )
 
 type ClientProtocol[Req Request, Resp Response] interface {
-	InitialScannerBufferSize() int
-	MaxTokenSize() int
-	ExtractToken(
-		data []byte,
-		isLatestData bool,
-	) (offsetToNextToken int, token []byte, err error)
+	BaseProtocol[Req, Resp]
+
 	MarshalRequest(request Req) ([]byte, error)
 	ParseResponse(data []byte) (Resp, error)
 }
@@ -57,17 +53,13 @@ func NewTCPClientFromConnection[Req Request, Resp Response](
 	connection net.Conn,
 	options TCPClientOptions[Req, Resp],
 ) TCPClient[Req, Resp] {
-	scanner := bufio.NewScanner(connection)
-	scanner.Buffer(
-		make([]byte, options.ClientProtocol.InitialScannerBufferSize()),
-		options.ClientProtocol.MaxTokenSize(),
-	)
-	scanner.Split(options.ClientProtocol.ExtractToken)
-
 	return TCPClient[Req, Resp]{
 		options:    options,
 		connection: connection,
-		scanner:    scanner,
+		scanner: InitializeScanner(InitializeScannerParams[Req, Resp]{
+			Reader:       connection,
+			BaseProtocol: options.ClientProtocol,
+		}),
 	}
 }
 

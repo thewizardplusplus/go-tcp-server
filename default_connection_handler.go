@@ -12,17 +12,9 @@ import (
 	"github.com/samber/mo"
 )
 
-type Request any
-
-type Response any
-
 type ServerProtocol[Req Request, Resp Response] interface {
-	InitialScannerBufferSize() int
-	MaxTokenSize() int
-	ExtractToken(
-		data []byte,
-		isLatestData bool,
-	) (offsetToNextToken int, token []byte, err error)
+	BaseProtocol[Req, Resp]
+
 	ParseRequest(token []byte) (Req, error)
 	MarshalResponse(response Resp) ([]byte, error)
 }
@@ -131,13 +123,10 @@ func (handler DefaultConnectionHandler[Req, Resp]) HandleConnection(
 	ctx context.Context,
 	connection net.Conn,
 ) error {
-	scanner := bufio.NewScanner(connection)
-	scanner.Buffer(
-		make([]byte, handler.options.ServerProtocol.InitialScannerBufferSize()),
-		handler.options.ServerProtocol.MaxTokenSize(),
-	)
-	scanner.Split(handler.options.ServerProtocol.ExtractToken)
-
+	scanner := InitializeScanner(InitializeScannerParams[Req, Resp]{
+		Reader:       connection,
+		BaseProtocol: handler.options.ServerProtocol,
+	})
 	for {
 		select {
 		case <-ctx.Done():
