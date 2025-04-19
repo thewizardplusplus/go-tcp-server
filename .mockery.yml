@@ -14,6 +14,10 @@ packages:
         config:
           dir: "mocks/external/{{ .SrcPackagePath }}"
           pkgname: "{{ .SrcPackageName }}ExternalMocks"
+      ClientProtocol:
+        config:
+          dir: "mocks/external/{{ .SrcPackagePath }}"
+          pkgname: "{{ .SrcPackageName }}ExternalMocks"
       RequestHandler:
         config:
           dir: "mocks/external/{{ .SrcPackagePath }}"
