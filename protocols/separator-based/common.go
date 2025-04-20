@@ -1,4 +1,4 @@
-package separatorBasedTCPServerProtocol
+package separatorBasedProtocol
 
 type SeparationParams struct {
 	MessageSeparator        []byte

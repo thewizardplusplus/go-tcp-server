@@ -1,4 +1,4 @@
-package separatorBasedTCPServerProtocol
+package separatorBasedProtocol
 
 import (
 	"bytes"
