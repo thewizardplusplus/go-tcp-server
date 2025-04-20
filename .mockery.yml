@@ -24,3 +24,6 @@ packages:
           pkgname: "{{ .SrcPackageName }}ExternalMocks"
       netConn:
       errorHandler:
+  github.com/thewizardplusplus/go-tcp-server/protocols/default:
+    interfaces:
+      MessageFormat:
